@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import logging
 import os
 
 from mnemosyne.consolidator import ConsolidationResult, Consolidator
 from mnemosyne.core.episodic import EpisodicStore
 from mnemosyne.core.semantic import SemanticStore
 from mnemosyne.core.working import WorkingMemory
+from mnemosyne.providers import build_providers
 from mnemosyne.scoring import ScoringEngine, ScoringWeights
 from mnemosyne.types import EventType, Memory
+
+logger = logging.getLogger(__name__)
 
 
 class Mnemosyne:
@@ -17,13 +21,17 @@ class Mnemosyne:
         storage_path: str | None = None,
         embedding_model: str = "all-MiniLM-L6-v2",
         working_memory_tokens: int = 1_500,
-        consolidation_model: str = "claude-haiku-4-5-20251001",
-        auto_consolidate_threshold: int = 10,
+        # LLM providers for consolidation
+        groq_api_key: str | None = None,
+        groq_model: str = "llama-3.3-70b-versatile",
+        ollama_model: str = "llama3.2",
+        ollama_base_url: str = "http://localhost:11434/v1",
+        # Scoring
         scoring_weights: ScoringWeights | None = None,
-        anthropic_api_key: str | None = None,
-        # Private params used in tests — prefixed with _ to signal non-public use
+        # Private — for tests only
         _ephemeral: bool = False,
         _embedding_function=None,
+        _provider=None,      # inject a mock LLM provider in tests
     ) -> None:
         self.session_id = session_id
         self.storage_path = storage_path or os.path.expanduser(
@@ -37,14 +45,33 @@ class Mnemosyne:
             _ephemeral=_ephemeral,
             _embedding_function=_embedding_function,
         )
-        self.semantic = SemanticStore(session_id, self.storage_path)
+        self.semantic = SemanticStore(
+            session_id=session_id,
+            storage_path=self.storage_path,
+            embedding_model=embedding_model,
+            _ephemeral=_ephemeral,
+            _embedding_function=_embedding_function,
+        )
         self.working = WorkingMemory(token_budget=working_memory_tokens)
         self.scorer = ScoringEngine(weights=scoring_weights)
+
+        if _provider is not None:
+            primary, fallback = _provider, None
+        else:
+            primary, fallback = build_providers(
+                groq_api_key=groq_api_key,
+                groq_model=groq_model,
+                ollama_model=ollama_model,
+                ollama_base_url=ollama_base_url,
+            )
+
         self._consolidator = Consolidator(
             session_id=session_id,
-            model=consolidation_model,
+            episodic=self.episodic,
+            semantic=self.semantic,
+            provider=primary,
+            fallback=fallback,
         )
-        self._auto_consolidate_threshold = auto_consolidate_threshold
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -68,30 +95,38 @@ class Mnemosyne:
         token_budget: int | None = None,
         return_raw: bool = False,
     ) -> str | list[Memory]:
-        # 1. Retrieve candidates with their cosine similarities from ChromaDB
-        candidates_with_sim = self.episodic.query(query, n_results=30)
+        # 1. Retrieve candidates from both memory layers
+        episodic_candidates = self.episodic.query(query, n_results=20)
+        semantic_candidates = self.semantic.query(query, n_results=20)
+        all_candidates: list[tuple[Memory, float]] = episodic_candidates + semantic_candidates
 
-        # 2. Re-rank using the composite score (recency + importance + frequency)
-        ranked = self.scorer.rank(candidates_with_sim)
+        # 2. Re-rank with the composite score
+        ranked = self.scorer.rank(all_candidates)
 
-        # 3. Greedy selection within token budget (highest-scored first)
+        # 3. Greedy token-budget selection
         memories = [m for m, _ in ranked]
         selected = self.working.select(
             memories,
             token_budget=token_budget or self.working.token_budget,
         )
 
-        # 4. Increment access counts for everything we surface
+        # 4. Increment access counts
         if selected:
-            ids = [m.id for m in selected]
-            counts = [m.access_count + 1 for m in selected]
-            self.episodic.increment_access(ids, counts)
+            ep_ids = [m.id for m in selected if m.id.startswith("ep_")]
+            ep_counts = [m.access_count + 1 for m in selected if m.id.startswith("ep_")]
+            if ep_ids:
+                self.episodic.increment_access(ep_ids, ep_counts)
+
+            sem_ids = [m.id for m in selected if m.id.startswith("sem_")]
+            sem_counts = [m.access_count + 1 for m in selected if m.id.startswith("sem_")]
+            if sem_ids:
+                self.semantic.increment_access(sem_ids, sem_counts)
 
         if return_raw:
             return selected
         return self.working.format_for_prompt(selected)
 
-    def consolidate(self, force: bool = False) -> ConsolidationResult:
+    def consolidate(self) -> ConsolidationResult:
         return self._consolidator.consolidate()
 
     async def aconsolidate(self) -> ConsolidationResult:
