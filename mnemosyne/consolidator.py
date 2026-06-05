@@ -22,10 +22,10 @@ Extract only facts that would still be useful in a future session. Focus on:
 Rules:
 - One fact per discrete piece of information
 - Write as declarative statements: "User prefers X", "Project uses Y"
-- importance 0.0–1.0: 0.9 for core preferences, 0.5 for general context, 0.3 for passing mentions
-- confidence 0.0–1.0: 0.9 if explicitly stated, 0.6 if inferred, 0.3 if speculative
+- importance: a single decimal number between 0.0 and 1.0 (e.g. 0.9). Use 0.9 for core preferences, 0.5 for general context, 0.3 for passing mentions. If the same fact repeats in the batch, use a higher value such as 0.95.
+- confidence: a single decimal number between 0.0 and 1.0. Use 0.9 if explicitly stated, 0.6 if inferred, 0.3 if speculative.
 - SKIP: filler ("ok", "thanks"), one-off task instructions, time-bound information
-- If the same fact appears multiple times in the batch, add 0.1 to importance per repetition
+- IMPORTANT: importance and confidence must be plain numbers like 0.9 — never arithmetic expressions like 0.9 + 0.1.
 
 fact_type must be one of:
   user_preference, user_background, project_context, task_constraint,

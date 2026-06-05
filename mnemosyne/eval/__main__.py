@@ -113,7 +113,7 @@ def main() -> None:
     scenarios = DIMENSION_MAP[args.dimension] if args.dimension else ALL_SCENARIOS
     provider = _build_provider(args)
 
-    with tempfile.TemporaryDirectory(prefix="mnemosyne_eval_") as tmpdir:
+    with tempfile.TemporaryDirectory(prefix="mnemosyne_eval_", ignore_cleanup_errors=True) as tmpdir:
         storage = args.storage_path or tmpdir
         report = run_eval(
             scenarios=scenarios,
