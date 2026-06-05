@@ -1,6 +1,9 @@
 # Documentation (local learning notes, not for distribution)
 /docs/
 
+# Claude Code
+.claude/
+
 # Python
 __pycache__/
 *.py[cod]
