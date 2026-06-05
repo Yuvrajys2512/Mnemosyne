@@ -136,7 +136,14 @@ def test_query_returns_episodic_events(store):
     store.add("The project uses FastAPI")
     results = store.query("Python preferences")
     assert len(results) > 0
-    assert all(hasattr(r, "content") for r in results)
+    # query() now returns (event, similarity) tuples
+    assert all(hasattr(event, "content") for event, _ in results)
+
+
+def test_query_returns_similarity_scores(store):
+    store.add("I prefer async Python patterns")
+    results = store.query("Python")
+    assert all(0.0 <= sim <= 1.0 for _, sim in results)
 
 
 def test_query_empty_store_returns_empty(store):
@@ -158,7 +165,7 @@ def test_query_with_metadata_filter(store):
         "said something",
         where={"event_type": EventType.USER_MESSAGE.value},
     )
-    assert all(r.event_type == EventType.USER_MESSAGE for r in results)
+    assert all(event.event_type == EventType.USER_MESSAGE for event, _ in results)
 
 
 # ── consolidation ─────────────────────────────────────────────────────────────

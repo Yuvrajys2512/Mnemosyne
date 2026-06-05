@@ -118,7 +118,7 @@ class EpisodicStore:
         query_text: str,
         n_results: int = 20,
         where: dict | None = None,
-    ) -> list[EpisodicEvent]:
+    ) -> list[tuple[EpisodicEvent, float]]:
         total = self._collection.count()
         if total == 0:
             return []
@@ -131,7 +131,7 @@ class EpisodicStore:
             n_results=min(n_results, total),
             where=effective_where,
         )
-        return _parse_query(results)
+        return _parse_query(results)  # returns list[tuple[EpisodicEvent, float]]
 
     def get_recent(self, n: int = 5) -> list[EpisodicEvent]:
         results = self._collection.get(
@@ -199,13 +199,17 @@ def _build_event(id_: str, doc: str, meta: dict) -> EpisodicEvent:
     )
 
 
-def _parse_query(results: dict) -> list[EpisodicEvent]:
+def _parse_query(results: dict) -> list[tuple[EpisodicEvent, float]]:
+    # ChromaDB cosine distance is in [0, 2]: 0=identical, 2=opposite.
+    # Convert to similarity in [0, 1]: sim = 1 - distance / 2
+    # (i.e. distance 0 → sim 1.0, distance 2 → sim 0.0)
     return [
-        _build_event(id_, doc, meta)
-        for id_, doc, meta in zip(
+        (_build_event(id_, doc, meta), 1.0 - distance / 2.0)
+        for id_, doc, meta, distance in zip(
             results["ids"][0],
             results["documents"][0],
             results["metadatas"][0],
+            results["distances"][0],
         )
     ]
 

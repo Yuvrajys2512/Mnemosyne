@@ -58,6 +58,11 @@ class SemanticFact:
     supersedes: str | None = None
     metadata: dict = field(default_factory=dict)
 
+    @property
+    def timestamp(self) -> float:
+        """Uniform interface with EpisodicEvent — returns last_updated."""
+        return self.last_updated
+
 
 # Union type used throughout the scoring and working memory layers
 Memory = EpisodicEvent | SemanticFact

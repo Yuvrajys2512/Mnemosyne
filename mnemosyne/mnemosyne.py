@@ -68,16 +68,20 @@ class Mnemosyne:
         token_budget: int | None = None,
         return_raw: bool = False,
     ) -> str | list[Memory]:
-        # ChromaDB already returns results ranked by cosine similarity.
-        # The scoring engine (Milestone 3) will re-rank these with recency + importance.
-        candidates: list[Memory] = self.episodic.query(query, n_results=30)
+        # 1. Retrieve candidates with their cosine similarities from ChromaDB
+        candidates_with_sim = self.episodic.query(query, n_results=30)
 
+        # 2. Re-rank using the composite score (recency + importance + frequency)
+        ranked = self.scorer.rank(candidates_with_sim)
+
+        # 3. Greedy selection within token budget (highest-scored first)
+        memories = [m for m, _ in ranked]
         selected = self.working.select(
-            candidates,
+            memories,
             token_budget=token_budget or self.working.token_budget,
         )
 
-        # Update access counts for retrieved memories
+        # 4. Increment access counts for everything we surface
         if selected:
             ids = [m.id for m in selected]
             counts = [m.access_count + 1 for m in selected]
