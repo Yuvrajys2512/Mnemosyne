@@ -61,6 +61,7 @@ class EpisodicStore:
         event_type: EventType = EventType.USER_MESSAGE,
         importance: float | None = None,
         metadata: dict | None = None,
+        _timestamp: float | None = None,   # override for eval / testing
     ) -> str:
         stripped = content.strip()
         if len(stripped) < 3 or stripped.lower() in _TRIVIAL:
@@ -71,13 +72,17 @@ class EpisodicStore:
             extra["truncated"] = True
             content = content[:2_000]
 
-        event = EpisodicEvent(
+        kwargs: dict = dict(
             content=content,
             session_id=self.session_id,
             event_type=event_type,
             importance=importance if importance is not None
                        else _infer_importance(content, event_type),
         )
+        if _timestamp is not None:
+            kwargs["timestamp"] = _timestamp
+
+        event = EpisodicEvent(**kwargs)
 
         self._collection.add(
             ids=[event.id],

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 
@@ -28,11 +29,14 @@ class Mnemosyne:
         ollama_base_url: str = "http://localhost:11434/v1",
         # Scoring
         scoring_weights: ScoringWeights | None = None,
+        # Auto-consolidation
+        auto_consolidate_threshold: int = 20,
         # Private — for tests only
         _ephemeral: bool = False,
         _embedding_function=None,
         _provider=None,      # inject a mock LLM provider in tests
     ) -> None:
+        self._auto_consolidate_threshold = auto_consolidate_threshold
         self.session_id = session_id
         self.storage_path = storage_path or os.path.expanduser(
             f"~/.mnemosyne/sessions/{session_id}"
@@ -82,14 +86,43 @@ class Mnemosyne:
         importance: float | None = None,
         metadata: dict | None = None,
     ) -> str:
-        return self.episodic.add(
+        id_ = self.episodic.add(
             content,
             event_type=event_type,
             importance=importance,
             metadata=metadata,
         )
+        if id_:
+            self._maybe_auto_consolidate()
+        return id_
+
+    def _maybe_auto_consolidate(self) -> None:
+        """Fire a background consolidation task when the threshold is hit.
+
+        Only works inside a running asyncio event loop (e.g. a LangGraph node).
+        In a purely synchronous context the user must call consolidate() manually.
+        """
+        if self.episodic.count_unconsolidated() < self._auto_consolidate_threshold:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self.aconsolidate())
+        except RuntimeError:
+            pass  # no running loop — silent skip, user calls consolidate() manually
 
     def recall(
+        self,
+        query: str,
+        token_budget: int | None = None,
+        return_raw: bool = False,
+    ) -> str | list[Memory]:
+        try:
+            return self._recall(query, token_budget=token_budget, return_raw=return_raw)
+        except Exception:
+            logger.exception("recall() failed — returning empty context to avoid crashing agent")
+            return [] if return_raw else ""
+
+    def _recall(
         self,
         query: str,
         token_budget: int | None = None,
