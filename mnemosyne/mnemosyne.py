@@ -29,6 +29,7 @@ class Mnemosyne:
 
         self.episodic = EpisodicStore(session_id, self.storage_path)
         self.semantic = SemanticStore(session_id, self.storage_path)
+
         self.working = WorkingMemory(token_budget=working_memory_tokens)
         self.scorer = ScoringEngine(weights=scoring_weights)
         self._consolidator = Consolidator(
