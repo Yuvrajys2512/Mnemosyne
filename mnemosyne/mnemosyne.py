@@ -16,20 +16,28 @@ class Mnemosyne:
         session_id: str,
         storage_path: str | None = None,
         embedding_model: str = "all-MiniLM-L6-v2",
-        working_memory_tokens: int = 1500,
+        working_memory_tokens: int = 1_500,
         consolidation_model: str = "claude-haiku-4-5-20251001",
         auto_consolidate_threshold: int = 10,
         scoring_weights: ScoringWeights | None = None,
         anthropic_api_key: str | None = None,
+        # Private params used in tests — prefixed with _ to signal non-public use
+        _ephemeral: bool = False,
+        _embedding_function=None,
     ) -> None:
         self.session_id = session_id
         self.storage_path = storage_path or os.path.expanduser(
             f"~/.mnemosyne/sessions/{session_id}"
         )
 
-        self.episodic = EpisodicStore(session_id, self.storage_path)
+        self.episodic = EpisodicStore(
+            session_id=session_id,
+            storage_path=self.storage_path,
+            embedding_model=embedding_model,
+            _ephemeral=_ephemeral,
+            _embedding_function=_embedding_function,
+        )
         self.semantic = SemanticStore(session_id, self.storage_path)
-
         self.working = WorkingMemory(token_budget=working_memory_tokens)
         self.scorer = ScoringEngine(weights=scoring_weights)
         self._consolidator = Consolidator(
@@ -60,7 +68,24 @@ class Mnemosyne:
         token_budget: int | None = None,
         return_raw: bool = False,
     ) -> str | list[Memory]:
-        raise NotImplementedError
+        # ChromaDB already returns results ranked by cosine similarity.
+        # The scoring engine (Milestone 3) will re-rank these with recency + importance.
+        candidates: list[Memory] = self.episodic.query(query, n_results=30)
+
+        selected = self.working.select(
+            candidates,
+            token_budget=token_budget or self.working.token_budget,
+        )
+
+        # Update access counts for retrieved memories
+        if selected:
+            ids = [m.id for m in selected]
+            counts = [m.access_count + 1 for m in selected]
+            self.episodic.increment_access(ids, counts)
+
+        if return_raw:
+            return selected
+        return self.working.format_for_prompt(selected)
 
     def consolidate(self, force: bool = False) -> ConsolidationResult:
         return self._consolidator.consolidate()
