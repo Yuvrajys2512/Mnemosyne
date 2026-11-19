@@ -1,8 +1,8 @@
-# recall-ai
+# Mnemosyne
 
 Multi-layer persistent memory for LangGraph and LangChain agents.
 
-Most AI agents forget everything the moment a session ends. **recall-ai** gives your agent three memory layers that persist across sessions — the same way human memory works.
+Most AI agents forget everything the moment a session ends. **Mnemosyne** gives your agent three memory layers that persist across sessions — the same way human memory works.
 
 ```python
 from mnemosyne import Mnemosyne, EventType
@@ -61,13 +61,13 @@ score = 0.40 × semantic_similarity
 ## Installation
 
 ```bash
-pip install recall-ai
+pip install "git+https://github.com/Yuvrajys2512/Mnemosyne.git"
 ```
 
 For the LangGraph integration example:
 
 ```bash
-pip install recall-ai langgraph
+pip install "git+https://github.com/Yuvrajys2512/Mnemosyne.git" langgraph
 ```
 
 ---
